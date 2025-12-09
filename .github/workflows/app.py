@@ -55,10 +55,11 @@ def init_google_drive():
         json_key_info_str = st.secrets["google_drive"]["service_account_json"]
         
         # Nettoyage de la chaîne JSON
-        cleaned_json_key_info_str = clean_json_string(json_key_info_str)
+        # cleaned_json_key_info_str = clean_json_string(json_key_info_str)
         
         # Chargement du JSON
-        json_key_info = json.loads(cleaned_json_key_info_str) 
+        # json_key_info = json.loads(cleaned_json_key_info_str) 
+        json_key_info = json.loads(json_key_info_str)
         
         # Vérification optionnelle de la clé
         if len(json_key_info.get("private_key", "")) < 500: 
