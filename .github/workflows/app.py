@@ -26,18 +26,23 @@ except KeyError:
 
 @st.cache_resource
 def get_drive_service():
-    """
-    Gère l'authentification en utilisant les secrets de Streamlit
-    et retourne l'objet service Drive.
-    """
-    st.info("Tentative de récupération du service Google Drive...")
-    
+    # ... (code précédent)
+
     # 1. Charger les credentials (depuis un fichier si local, ou secrets si déployé)
     if os.path.exists(CREDENTIALS_FILE):
-        # Local: Lit le fichier credentials.json
-        client_config = json.load(open(CREDENTIALS_FILE))
-    elif "google" in st.secrets and "client_id" in st.secrets["google"]:
-        # Déployé (Streamlit Cloud): Construit l'objet à partir des secrets
+        # ... (gestion locale)
+    elif "google" in st.secrets:
+        # --- NOUVELLE VÉRIFICATION AMÉLIORÉE ---
+        required_keys = ["client_id", "client_secret", "project_id", "auth_uri", "token_uri", "auth_provider_x509_cert_url"]
+        
+        missing_keys = [k for k in required_keys if k not in st.secrets["google"]]
+        
+        if missing_keys:
+            st.error(f"❌ Erreur de configuration dans `st.secrets` : Les clés Google Drive suivantes sont manquantes ou mal orthographiées : {', '.join(missing_keys)}. Veuillez vérifier la section [google].")
+            return None # Arrêter ici
+        # --- FIN DE LA VÉRIFICATION AMÉLIORÉE ---
+
+        # Construit l'objet à partir des secrets
         client_config = {
             "installed": {
                 "client_id": st.secrets["google"]["client_id"],
@@ -50,8 +55,10 @@ def get_drive_service():
             }
         }
     else:
-        st.error(f"Fichier '{CREDENTIALS_FILE}' non trouvé et secrets non définis.")
+        st.error(f"Fichier '{CREDENTIALS_FILE}' non trouvé et section 'google' manquante dans st.secrets.")
         return None
+
+    # ... (reste du code)
 
     # 2. Charger les jetons (depuis un fichier si local, ou secrets si déployé)
     creds = None
