@@ -54,7 +54,17 @@ def clean_json_string(json_string):
 
 @st.cache_resource(show_spinner="Initialisation de Google Drive...")
 def init_google_drive():
-    """Initialise l'objet Google Drive à partir des secrets Streamlit (Méthode de la clé divisée)."""
+    """Initialise l'objet Google Drive à partir des secrets Streamlit."""
+    
+    # ... (Tout le code de la fonction reste le même, sans le décorateur) ...
+    
+    # ... à la fin du try:
+    return drive, folder_id
+    
+    # ... dans le except:
+    except Exception as e:
+        # ...
+        return None, None
     
     # ... (code pour reconstruire json_key_info à partir de st.secrets) ...
     
