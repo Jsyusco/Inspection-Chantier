@@ -1,21 +1,21 @@
 # --- IMPORTS ET PRÉPARATION ---
 import streamlit as st
 import io
-import json
 import re
 from datetime import datetime
-import os
+import os # Import maintenu mais non utilisé directement ici
 
 # Importation spécifique pour Google Drive
 try:
     # Nécessaire pour pydrive2
     from pydrive2.auth import GoogleAuth
     from pydrive2.drive import GoogleDrive
-    from google.oauth2 import service_account
-    from google.auth.transport.requests import AuthorizedSession
+    # ATTENTION : Les imports ci-dessous ne sont plus nécessaires 
+    # pour le flux d'authentification pydrive2 natif et ont été retirés/omis.
+    # from google.oauth2 import service_account 
+    # from google.auth.transport.requests import AuthorizedSession 
     GOOGLE_DRIVE_AVAILABLE = True
 except ImportError:
-    # Ce message d'erreur s'affiche si les dépendances ne sont pas installées.
     st.error("🚨 Erreur: Le module 'pydrive2' ou ses dépendances sont manquants. Exécutez 'pip install pydrive2 google-api-python-client'.")
     GOOGLE_DRIVE_AVAILABLE = False
     
@@ -31,68 +31,54 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- FONCTION DE NETTOYAGE AMÉLIORÉE POUR LA ROBUSTESSE ---
+# --- FONCTION DE NETTOYAGE (Gardée par précaution, mais potentiellement inutile si la clé est bien formatée dans secrets.toml) ---
 def clean_json_string(json_string):
-    """
-    Nettoie la chaîne JSON pour supprimer les caractères de contrôle non valides.
-    
-    IMPORTANT : Ce pattern permet de conserver les sauts de ligne (\n), 
-    les retours chariot (\r) et les tabulations (\t) car ils sont nécessaires 
-    dans la "private_key" du compte de service, tout en éliminant les autres
-    caractères de contrôle qui cassent json.loads().
-    """
+    """Nettoie la chaîne JSON pour la private_key."""
     if not isinstance(json_string, str):
         return json_string
         
     # Pattern : remplace tout ce qui n'est pas un caractère imprimable ASCII (\x20-\x7E)
     # ou un caractère de contrôle "sûr" (\t, \n, \r) par une chaîne vide.
     cleaned_string = re.sub(r'[^\x20-\x7E\t\n\r]', '', json_string)
-    
     return cleaned_string
 
-# --- FONCTION D'INITIALISATION GOOGLE DRIVE (MISE À JOUR) ---
+# --- FONCTION D'INITIALISATION GOOGLE DRIVE (CORRIGÉE) ---
 
 @st.cache_resource(show_spinner="Initialisation de Google Drive...")
 def init_google_drive():
-    # ... (Vérifications d'importation omises pour la concision) ...
-
+    """Initialise l'objet GoogleDrive en utilisant l'authentification par compte de service pydrive2."""
+    if not GOOGLE_DRIVE_AVAILABLE:
+        return None, None
+        
     try:
-        # Reconstruire l'objet JSON du compte de service à partir des secrets individuels
-        # Les clés proviennent directement du secrets.toml que vous avez fourni
-        json_key_info = {
-            "type": st.secrets["google_drive"]["type"],
-            "project_id": st.secrets["google_drive"]["project_id"],
-            "private_key_id": st.secrets["google_drive"]["private_key_id"],
-            "private_key": st.secrets["google_drive"]["private_key"], # Utilise la clé échappée
-            "client_email": st.secrets["google_drive"]["client_email"],
-            "client_id": st.secrets["google_drive"]["client_id"],
-            "auth_uri": st.secrets["google_drive"]["auth_uri"],
-            "token_uri": st.secrets["google_drive"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["google_drive"]["auth_provider_x509_cert_url"],
-            "client_x509_cert_url": st.secrets["google_drive"]["client_x509_cert_url"],
-            "universe_domain": st.secrets["google_drive"].get("universe_domain", "googleapis.com")
-        }
+        # 1. Initialisation de GoogleAuth
+        gauth = GoogleAuth()
 
-        # 1. Création des identifiants (Plus besoin de clean_json_string ou json.loads)
-        creds = service_account.Credentials.from_service_account_info(
-            json_key_info,
-            scopes=['https://www.googleapis.com/auth/drive']
-        )
+        # 2. Définir les paramètres d'authentification pour utiliser le compte de service
+        gauth.settings['service_account'] = True
+        gauth.settings['oauth_scope'] = ['https://www.googleapis.com/auth/drive'] # Scope nécessaire pour l'upload
+
+        # 3. Récupérer les identifiants du compte de service depuis Streamlit Secrets
+        client_email = st.secrets["google_drive"]["client_email"]
+        # La clé privée DOIT inclure les retours à la ligne (\n)
+        private_key = st.secrets["google_drive"]["private_key"]
         
-        http_auth = AuthorizedSession(creds)
-        drive = GoogleDrive(http_auth)
+        # 4. Charger les identifiants
+        # Cette méthode est native à pydrive2 et compatible avec GoogleDrive()
+        gauth.LoadServiceAccountCredentials(client_email, private_key)
         
-        # 2. Récupération de l'ID du dossier cible
-        folder_id = st.secrets["google_drive"]["target_folder_id"] # Clé requise
+        # 5. Créer l'objet GoogleDrive avec l'objet d'authentification configuré
+        drive = GoogleDrive(gauth)
         
-        # ... (Vérification et succès omis pour la concision) ...
+        # 6. Récupération de l'ID du dossier cible
+        folder_id = st.secrets["google_drive"]["target_folder_id"] 
+        
         st.success("✅ Google Drive initialisé avec succès. Prêt à uploader.")
         return drive, folder_id
 
     except Exception as e:
-        # ... (Gestion des erreurs omise) ...
         st.error(f"❌ ÉCHEC de l'initialisation de Google Drive : {e}")
-        st.caption("Veuillez vérifier les valeurs individuelles de votre compte de service dans `secrets.toml`.")
+        st.caption("Veuillez vérifier les valeurs individuelles de votre compte de service dans `secrets.toml`, en particulier la `private_key`.")
         return None, None
 
 # --- FONCTION DE SAUVEGARDE DE FICHIER UNIQUE ---
