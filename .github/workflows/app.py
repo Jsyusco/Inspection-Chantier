@@ -50,20 +50,22 @@ def clean_json_string(json_string):
     
     return cleaned_string
 
-# --- FONCTION D'INITIALISATION GOOGLE DRIVE (MISE À JOUR) ---
+# --- FONCTION D'INITIALISATION GOOGLE DRIVE (CORRIGÉE) ---
 
 @st.cache_resource(show_spinner="Initialisation de Google Drive...")
 def init_google_drive():
-    # ... (Vérifications d'importation omises pour la concision) ...
-
+    """Initialise l'objet Google Drive à partir des secrets Streamlit (Méthode de la clé divisée)."""
+    
+    # ... (code pour reconstruire json_key_info à partir de st.secrets) ...
+    
     try:
         # Reconstruire l'objet JSON du compte de service à partir des secrets individuels
-        # Les clés proviennent directement du secrets.toml que vous avez fourni
+        # (J'utilise ici la structure que vous avez confirmée)
         json_key_info = {
             "type": st.secrets["google_drive"]["type"],
             "project_id": st.secrets["google_drive"]["project_id"],
             "private_key_id": st.secrets["google_drive"]["private_key_id"],
-            "private_key": st.secrets["google_drive"]["private_key"], # Utilise la clé échappée
+            "private_key": st.secrets["google_drive"]["private_key"],
             "client_email": st.secrets["google_drive"]["client_email"],
             "client_id": st.secrets["google_drive"]["client_id"],
             "auth_uri": st.secrets["google_drive"]["auth_uri"],
@@ -73,61 +75,36 @@ def init_google_drive():
             "universe_domain": st.secrets["google_drive"].get("universe_domain", "googleapis.com")
         }
 
-        # 1. Création des identifiants (Plus besoin de clean_json_string ou json.loads)
+        # 1. Création des identifiants (creds) comme avant
         creds = service_account.Credentials.from_service_account_info(
             json_key_info,
             scopes=['https://www.googleapis.com/auth/drive']
         )
         
-        http_auth = AuthorizedSession(creds)
-        drive = GoogleDrive(http_auth)
+        # 2. Utilisation de GoogleAuth pour encapsuler les identifiants spécifiques
+        #    à pydrive2
+        gauth = GoogleAuth()
+        # Assigner les identifiants créés au flux d'authentification de pydrive2
+        gauth.credentials = creds 
         
-        # 2. Récupération de l'ID du dossier cible
-        folder_id = st.secrets["google_drive"]["target_folder_id"] # Clé requise
+        # 3. Créer l'objet GoogleDrive avec l'objet GoogleAuth compatible
+        drive = GoogleDrive(gauth) # <--- CORRIGÉ
         
-        # ... (Vérification et succès omis pour la concision) ...
+        # ... (Reste du code identique) ...
+        
+        folder_id = st.secrets["google_drive"]["target_folder_id"] 
+        
+        if not folder_id:
+            st.error("❌ 'target_folder_id' est manquant dans la section [google_drive] du secret.")
+            return None, None
+            
         st.success("✅ Google Drive initialisé avec succès. Prêt à uploader.")
         return drive, folder_id
 
     except Exception as e:
-        # ... (Gestion des erreurs omise) ...
         st.error(f"❌ ÉCHEC de l'initialisation de Google Drive : {e}")
         st.caption("Veuillez vérifier les valeurs individuelles de votre compte de service dans `secrets.toml`.")
         return None, None
-
-# --- FONCTION DE SAUVEGARDE DE FICHIER UNIQUE ---
-
-def upload_file_to_drive(drive, folder_id, uploaded_file):
-    """Sauvegarde un unique objet UploadedFile dans Google Drive."""
-    
-    if not drive or not folder_id:
-        st.error("Google Drive non initialisé. Upload impossible.")
-        return False
-
-    file_name = f"TEST_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uploaded_file.name}"
-    
-    try:
-        with st.spinner(f"Upload en cours de {file_name}..."):
-            # Créer le fichier sur Drive
-            file_drive = drive.CreateFile({
-                'title': file_name, 
-                'parents': [{'id': folder_id}], 
-                'mimeType': uploaded_file.type
-            })
-            
-            # Lire les octets du fichier uploadé et les attribuer au contenu du fichier Drive
-            file_drive.content = io.BytesIO(uploaded_file.getvalue())
-            
-            # Uploader
-            file_drive.Upload()
-            
-        st.success(f"🎉 Fichier uploadé avec succès sur Drive : **{file_name}**")
-        st.info(f"Vérifiez le dossier Google Drive ID : `{folder_id}`")
-        return True
-    except Exception as e:
-        st.error(f"❌ Échec de l'upload du fichier : {e}")
-        st.warning("Vérifiez les permissions de votre clé de service (rôle ÉDITEUR) pour l'écriture dans le dossier cible.")
-        return False
 
 # --- BOUCLE PRINCIPALE DE TEST ---
 
