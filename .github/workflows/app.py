@@ -32,6 +32,8 @@ st.markdown("""
 
 # --- FONCTION D'INITIALISATION GOOGLE DRIVE (FINAL) ---
 
+# --- FONCTION D'INITIALISATION GOOGLE DRIVE (FINAL CORRIGÉ) ---
+
 @st.cache_resource(show_spinner="Initialisation de Google Drive...")
 def init_google_drive():
     """Initialise l'objet Google Drive via GoogleAuth et le stocke dans st.session_state."""
@@ -47,7 +49,6 @@ def init_google_drive():
 
     try:
         # 1. Reconstruire l'objet JSON du compte de service à partir des secrets individuels
-        #    Cette structure a résolu les problèmes de formatage
         json_key_info = {
             "type": st.secrets["google_drive"]["type"],
             "project_id": st.secrets["google_drive"]["project_id"],
@@ -64,15 +65,15 @@ def init_google_drive():
         
         # 2. Configurer GoogleAuth pour utiliser le Compte de Service
         gauth = GoogleAuth()
-        # Définir le backend de configuration sur 'service' pour indiquer un Service Account
+        
+        # **CORRECTION CRUCIALE :** Utiliser 'service_config' au lieu de 'client_config' 
+        # pour l'authentification Service Account.
+        gauth.settings['service_config'] = json_key_info 
+        
         gauth.settings['client_config_backend'] = 'service'
-        # Injecter les informations de la clé de service
-        gauth.settings['client_config'] = json_key_info
-        # Définir les scopes requis
         gauth.settings['oauth_scope'] = ['https://www.googleapis.com/auth/drive']
         
         # 3. Exécuter l'authentification du Compte de Service via pydrive2
-        #    Ceci crée un objet compatible avec les méthodes access_token_expired
         gauth.ServiceAuth()
         
         # 4. Créer l'objet GoogleDrive
@@ -91,7 +92,7 @@ def init_google_drive():
 
     except Exception as e:
         st.error(f"❌ ÉCHEC de l'initialisation de Google Drive : {e}")
-        st.caption("Veuillez vérifier les valeurs individuelles de votre compte de service dans `secrets.toml` et les permissions du compte.")
+        st.caption("Veuillez vérifier les valeurs de votre compte de service et les permissions du compte.")
         st.session_state.drive_initialized = False
         return False
 
