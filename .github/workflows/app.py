@@ -99,13 +99,13 @@ def get_drive_service():
             """)
             return None # Arrêter ici
             
-    # 4. Enregistrement/Affichage du jeton mis à jour
+# 4. Enregistrement/Affichage du jeton mis à jour
     # Si nous sommes en mode local ou si le token_json n'a pas été défini (cas initial)
     if os.path.exists(TOKEN_FILE):
         # Sauvegarde locale du jeton rafraîchi (pour les tests en local)
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
-    elif "google" in st.secrets and "token_json" in st.secrets["google"]:
+    elif "google" in st.secrets and "token_json" in st.secrets["google"] and creds and creds.valid:
         # Affiche le nouveau jeton rafraîchi (si l'app est déployée et que le refresh a fonctionné)
         st.code(creds.to_json(), language="json", label="✅ Nouveau token.json rafraîchi (Copiez ceci dans st.secrets pour la persistance)")
 
