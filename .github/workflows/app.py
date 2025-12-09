@@ -39,44 +39,41 @@ def clean_json_string(json_string):
     # ou un caractère de contrôle "sûr" (\t, \n, \r) par une chaîne vide.
     cleaned_string = re.sub(r'[^\x20-\x7E\t\n\r]', '', json_string)
     return cleaned_string
-# --- FONCTION D'INITIALISATION GOOGLE DRIVE (CORRIGÉE) ---
+
+# --- FONCTION D'INITIALISATION GOOGLE DRIVE (INITIALE - CAUSE DU BUG) ---
 
 @st.cache_resource(show_spinner="Initialisation de Google Drive...")
 def init_google_drive():
-    """Initialise l'objet GoogleDrive en utilisant l'authentification par compte de service pydrive2."""
-    if not GOOGLE_DRIVE_AVAILABLE:
-        return None, None
-        
     try:
-        # 1. Initialisation de GoogleAuth
-        gauth = GoogleAuth()
-
-        # 2. Récupérer les identifiants du compte de service depuis Streamlit Secrets
-        client_email = st.secrets["google_drive"]["client_email"]
-        private_key = st.secrets["google_drive"]["private_key"]
-        
-        # 3. Définir les paramètres d'authentification pour utiliser le compte de service
-        gauth.settings['service_account'] = True
-        # Utiliser le scope Drive complet pour la lecture (drive.readonly suffirait)
-        gauth.settings['oauth_scope'] = ['https://www.googleapis.com/auth/drive'] 
-        
-        # 🚨 FIX du bug 'Missing required setting service_config' 
-        # Configure manuellement les secrets pour pydrive2
-        gauth.settings['client_config'] = {
-            'client_email': client_email,
-            'private_key': private_key
+        # Reconstruire l'objet JSON du compte de service à partir des secrets individuels
+        json_key_info = {
+            "type": st.secrets["google_drive"]["type"],
+            "project_id": st.secrets["google_drive"]["project_id"],
+            "private_key_id": st.secrets["google_drive"]["private_key_id"],
+            "private_key": st.secrets["google_drive"]["private_key"], # Utilise la clé échappée
+            "client_email": st.secrets["google_drive"]["client_email"],
+            "client_id": st.secrets["google_drive"]["client_id"],
+            "auth_uri": st.secrets["google_drive"]["auth_uri"],
+            "token_uri": st.secrets["google_drive"]["token_uri"],
+            "auth_provider_x509_cert_url": st.secrets["google_drive"]["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": st.secrets["google_drive"]["client_x509_cert_url"],
+            "universe_domain": st.secrets["google_drive"].get("universe_domain", "googleapis.com")
         }
+
+        # 1. Création des identifiants (Utilisation de google.oauth2.service_account)
+        creds = service_account.Credentials.from_service_account_info(
+            json_key_info,
+            scopes=['https://www.googleapis.com/auth/drive']
+        )
         
-        # 4. Charger les identifiants
-        gauth.LoadServiceAccountCredentials(client_email, private_key)
+        # 2. Création de la session (Utilisation de AuthorizedSession non compatible avec pydrive2)
+        http_auth = AuthorizedSession(creds)
+        drive = GoogleDrive(http_auth) # <--- C'est ici que l'erreur se produit
         
-        # 5. Créer l'objet GoogleDrive avec l'objet d'authentification configuré
-        drive = GoogleDrive(gauth)
+        # 3. Récupération de l'ID du dossier cible
+        folder_id = st.secrets["google_drive"]["target_folder_id"] # Clé requise
         
-        # 6. Récupération de l'ID du dossier cible
-        folder_id = st.secrets["google_drive"]["target_folder_id"] 
-        
-        st.success("✅ Google Drive initialisé avec succès. Prêt à lister les fichiers.")
+        st.success("✅ Google Drive initialisé avec succès. Prêt à uploader.")
         return drive, folder_id
 
     except Exception as e:
