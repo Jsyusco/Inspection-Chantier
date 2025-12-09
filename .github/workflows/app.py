@@ -1,172 +1,207 @@
-# --- IMPORTS ET PRÉPARATION ---
 import streamlit as st
-import io # Gardé au cas où l'utilisateur voudrait uploader plus tard
-import re # Gardé par défaut, mais non utilisé dans cette version
-from datetime import datetime
-# Importation spécifique pour Google Drive
+import os
+import json
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from io import BytesIO
+
+# --- Configuration et Constantes ---
+SCOPES = ['https://www.googleapis.com/auth/drive']
+TOKEN_FILE = 'token.json'
+CREDENTIALS_FILE = 'credentials.json'
+
+# Utilisation de st.secrets pour stocker les informations
+# Lors du déploiement sur Streamlit Cloud, vous devrez définir ces secrets.
+# Voir la section "Configuration pour Streamlit Cloud" ci-dessous.
 try:
-    # Nécessaire pour pydrive2
-    from pydrive2.auth import GoogleAuth
-    from pydrive2.drive import GoogleDrive
-    # Les imports de google.oauth2 et AuthorizedSession sont retirés car non compatibles avec pydrive2
-    GOOGLE_DRIVE_AVAILABLE = True
-except ImportError:
-    st.error("🚨 Erreur: Le module 'pydrive2' ou ses dépendances sont manquants. Exécutez 'pip install pydrive2 google-api-python-client'.")
-    GOOGLE_DRIVE_AVAILABLE = False
+    DRIVE_FOLDER_ID = st.secrets["google"]["DRIVE_FOLDER_ID"]
+except KeyError:
+    st.error("L'ID du dossier Google Drive n'est pas configuré dans st.secrets.")
+    DRIVE_FOLDER_ID = None
+
+# --- Fonctions d'Authentification et de Service ---
+
+@st.cache_resource
+def get_drive_service():
+    """
+    Gère l'authentification en utilisant les secrets de Streamlit
+    et retourne l'objet service Drive.
+    """
+    st.info("Tentative de récupération du service Google Drive...")
     
-# --- CONFIGURATION ET STYLE ---
-st.set_page_config(page_title="Test Google Drive", layout="centered")
-
-st.markdown("""
-<style>
-    .stApp { background-color: #121212; color: #e0e0e0; }
-    .main-header { background-color: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center; border-bottom: 3px solid #63B3ED; }
-    .phase-block { background-color: #1e1e1e; padding: 25px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #333; }
-    .stSuccess, .stError, .stWarning { border-radius: 8px; padding: 10px; }
-</style>
-""", unsafe_allow_html=True)
-
-# La fonction clean_json_string est retirée car non nécessaire avec l'authentification corrigée.
-# --- FONCTION DE NETTOYAGE AMÉLIORÉE POUR LA ROBUSTESSE ---
-def clean_json_string(json_string):
-    """
-    Nettoie la chaîne JSON pour supprimer les caractères de contrôle non valides.
-    """
-    if not isinstance(json_string, str):
-        return json_string
-        
-    # Pattern : remplace tout ce qui n'est pas un caractère imprimable ASCII (\x20-\x7E)
-    # ou un caractère de contrôle "sûr" (\t, \n, \r) par une chaîne vide.
-    cleaned_string = re.sub(r'[^\x20-\x7E\t\n\r]', '', json_string)
-    return cleaned_string
-
-# --- FONCTION D'INITIALISATION GOOGLE DRIVE (INITIALE - CAUSE DU BUG) ---
-
-@st.cache_resource(show_spinner="Initialisation de Google Drive...")
-def init_google_drive():
-    try:
-        # Reconstruire l'objet JSON du compte de service à partir des secrets individuels
-        json_key_info = {
-            "type": st.secrets["google_drive"]["type"],
-            "project_id": st.secrets["google_drive"]["project_id"],
-            "private_key_id": st.secrets["google_drive"]["private_key_id"],
-            "private_key": st.secrets["google_drive"]["private_key"], # Utilise la clé échappée
-            "client_email": st.secrets["google_drive"]["client_email"],
-            "client_id": st.secrets["google_drive"]["client_id"],
-            "auth_uri": st.secrets["google_drive"]["auth_uri"],
-            "token_uri": st.secrets["google_drive"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["google_drive"]["auth_provider_x509_cert_url"],
-            "client_x509_cert_url": st.secrets["google_drive"]["client_x509_cert_url"],
-            "universe_domain": st.secrets["google_drive"].get("universe_domain", "googleapis.com")
+    # 1. Charger les credentials (depuis un fichier si local, ou secrets si déployé)
+    if os.path.exists(CREDENTIALS_FILE):
+        # Local: Lit le fichier credentials.json
+        client_config = json.load(open(CREDENTIALS_FILE))
+    elif "google" in st.secrets and "client_id" in st.secrets["google"]:
+        # Déployé (Streamlit Cloud): Construit l'objet à partir des secrets
+        client_config = {
+            "installed": {
+                "client_id": st.secrets["google"]["client_id"],
+                "client_secret": st.secrets["google"]["client_secret"],
+                "project_id": st.secrets["google"]["project_id"],
+                "auth_uri": st.secrets["google"]["auth_uri"],
+                "token_uri": st.secrets["google"]["token_uri"],
+                "auth_provider_x509_cert_url": st.secrets["google"]["auth_provider_x509_cert_url"],
+                "redirect_uris": st.secrets["google"]["redirect_uris"]
+            }
         }
+    else:
+        st.error(f"Fichier '{CREDENTIALS_FILE}' non trouvé et secrets non définis.")
+        return None
 
-        # 1. Création des identifiants (Utilisation de google.oauth2.service_account)
-        creds = service_account.Credentials.from_service_account_info(
-            json_key_info,
-            scopes=['https://www.googleapis.com/auth/drive']
-        )
+    # 2. Charger les jetons (depuis un fichier si local, ou secrets si déployé)
+    creds = None
+    if os.path.exists(TOKEN_FILE):
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    elif "google" in st.secrets and "token_json" in st.secrets["google"]:
+        creds_info = json.loads(st.secrets["google"]["token_json"])
+        creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
+
+    # 3. Gérer l'expiration ou le manque de jeton
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            st.info("Jeton expiré. Tentative de rafraîchissement...")
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                st.error(f"Erreur lors du rafraîchissement du jeton. Vous devez vous ré-authentifier : {e}")
+                # Forcer la ré-authentification si le rafraîchissement échoue
+                creds = None
         
-        # 2. Création de la session (Utilisation de AuthorizedSession non compatible avec pydrive2)
-        http_auth = AuthorizedSession(creds)
-        drive = GoogleDrive(http_auth) # <--- C'est ici que l'erreur se produit
-        
-        # 3. Récupération de l'ID du dossier cible
-        folder_id = st.secrets["google_drive"]["target_folder_id"] # Clé requise
-        
-        st.success("✅ Google Drive initialisé avec succès. Prêt à uploader.")
-        return drive, folder_id
-
-    except Exception as e:
-        st.error(f"❌ ÉCHEC de l'initialisation de Google Drive : {e}")
-        st.caption("Veuillez vérifier les valeurs individuelles de votre compte de service dans `secrets.toml`.")
-        return None, None
-
-# --- NOUVELLE FONCTION DE LISTE DE FICHIERS ---
-
-def list_files_in_drive_folder(drive, folder_id):
-    """Liste les fichiers présents dans le dossier cible et les affiche dans Streamlit."""
-    
-    if not drive or not folder_id:
-        st.error("Google Drive non initialisé. Liste impossible.")
-        return
-
-    st.markdown("<div class='phase-block'>", unsafe_allow_html=True)
-    st.markdown(f"<h2>Contenu du dossier Drive</h2>", unsafe_allow_html=True)
-    st.info(f"Dossier cible (ID) : `{folder_id}`")
-    
-    # Requête de recherche pydrive2 pour lister uniquement les fichiers (non-dossiers) dans le dossier cible
-    # 'trashed = false' exclut les fichiers dans la corbeille.
-    # 'mimeType != "application/vnd.google-apps.folder"' exclut les sous-dossiers.
-    query = f"'{folder_id}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'"
-    
-    try:
-        with st.spinner("Récupération de la liste des fichiers..."):
-            # Obtient la liste des fichiers correspondant à la requête
-            file_list = drive.ListFile({'q': query}).GetList()
+        if not creds:
+            # Cette partie nécessite une manipulation pour une app déployée
+            # En local, vous pouvez toujours utiliser flow.run_local_server()
+            # Pour un déploiement sécurisé, la meilleure pratique est de réaliser 
+            # l'authentification *une fois* en local, puis de copier le token.json 
+            # dans les secrets de l'application déployée.
+            st.warning("""
+            Authentification requise ! 
+            Pour un déploiement Streamlit Cloud, vous devez réaliser l'authentification 
+            en local une fois, puis copier le contenu du fichier `token.json` 
+            dans `st.secrets` (clé `token_json`).
+            """)
+            st.stop() # Arrête l'exécution de l'application
             
-        if not file_list:
-            st.warning("Le dossier ne contient aucun fichier (ou aucun fichier non-dossier).")
-            st.markdown("</div>", unsafe_allow_html=True)
+    # 4. Enregistrement du jeton mis à jour (localement ou affichage pour secrets)
+    if os.path.exists(TOKEN_FILE) or "token_json" not in st.secrets["google"]:
+        # Sauvegarde locale du jeton rafraîchi (pour les tests en local)
+        with open(TOKEN_FILE, 'w') as token:
+            token.write(creds.to_json())
+    else:
+        # Affiche le nouveau jeton rafraîchi pour le mettre à jour dans Streamlit Cloud
+        st.code(creds.to_json(), language="json", label="Nouveau token.json à mettre à jour dans st.secrets")
+
+    return build('drive', 'v3', credentials=creds)
+
+# --- Fonctions Drive (Adaptées pour Streamlit) ---
+
+def lister_fichiers_dossier(service, folder_id):
+    """Liste les fichiers d'un dossier Google Drive spécifique et affiche dans Streamlit."""
+    if not folder_id:
+        return
+    
+    st.subheader("📁 Fichiers dans le dossier Google Drive")
+    try:
+        query = f"'{folder_id}' in parents and trashed = false"
+
+        results = service.files().list(
+            q=query,
+            pageSize=50,
+            fields="nextPageToken, files(id, name, mimeType, size)"
+        ).execute()
+
+        items = results.get('files', [])
+
+        if not items:
+            st.info('Aucun fichier trouvé dans ce dossier.')
             return
 
-        st.success(f"🎉 **{len(file_list)}** fichiers trouvés dans le dossier.")
-        
-        # Préparer les données pour l'affichage
-        data = []
-        for file in file_list:
-            # Conversion de la taille en Mo pour une meilleure lisibilité
-            size_mb = f"{int(file.get('fileSize', 0)) / (1024*1024):.2f} Mo" if file.get('fileSize') else 'N/A'
-            
-            # Formater la date de modification
-            modified_date = datetime.strptime(file['modifiedDate'], '%Y-%m-%dT%H:%M:%S.%fZ').strftime('%Y-%m-%d %H:%M:%S')
+        st.success(f"**{len(items)}** fichiers trouvés :")
+        # Affichage des résultats dans un tableau
+        st.table([{'Nom': item['name'], 'ID': item['id'], 'Type': item['mimeType']} for item in items])
 
-            data.append({
-                "Nom du Fichier": file['title'],
-                "Taille": size_mb,
-                "Type MIME": file['mimeType'],
-                "ID du Fichier": file['id'],
-                "Modifié le": modified_date
-            })
+    except Exception as error:
+        st.error(f'⚠️ Une erreur est survenue lors du listage : {error}')
 
-        # Afficher la liste des fichiers dans un tableau Streamlit
-        st.dataframe(data, use_container_width=True)
+def uploader_fichier(service, uploaded_file, folder_id):
+    """
+    Uploade un objet Streamlit UploadedFile vers Google Drive.
+    """
+    if not folder_id or not uploaded_file:
+        return
         
-    except Exception as e:
-        st.error(f"❌ Échec de la récupération de la liste des fichiers : {e}")
-        st.warning("Vérifiez que le compte de service a les permissions de LECTURE sur le dossier cible.")
+    st.subheader("⬆️ Upload du fichier")
+    try:
+        # 1. Définir les métadonnées du fichier
+        file_metadata = {
+            'name': uploaded_file.name,
+            'parents': [folder_id]
+        }
         
-    st.markdown("</div>", unsafe_allow_html=True)
+        # 2. Créer l'objet MediaFileUpload à partir du flux de données
+        # On utilise MediaIoBaseUpload car nous avons un flux en mémoire (BytesIO)
+        # plutôt qu'un chemin de fichier local.
+        
+        # On lit le flux de données en mémoire
+        file_bytes = uploaded_file.read()
+        media_stream = BytesIO(file_bytes)
 
-# --- BOUCLE PRINCIPALE DE TEST ---
+        media = MediaFileUpload(
+            media_stream, 
+            mimetype=uploaded_file.type, # Utilise le mimeType de Streamlit
+            resumable=True
+        )
+
+        # 3. Appel de l'API pour créer le fichier
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, name'
+        ).execute()
+
+        st.success(f"✅ Fichier uploadé avec succès : **{file.get('name')}** (ID: {file.get('id')})")
+        st.balloons()
+        
+    except Exception as error:
+        st.error(f"❌ Une erreur est survenue lors de l'upload : {error}")
+
+# --- Application Streamlit Principale ---
 
 def main():
-    st.markdown("<div class='main-header'><h1>Test de Connexion Google Drive et Liste des Fichiers</h1></div>", unsafe_allow_html=True)
+    st.title("☁️ Google Drive Uploader Streamlit")
+    st.write("Cet outil permet d'uploader un fichier vers un dossier spécifique de Google Drive et d'en lister le contenu.")
     
-    # Si les dépendances sont manquantes, on arrête l'exécution de la logique principale
-    if not GOOGLE_DRIVE_AVAILABLE:
-        st.markdown("---")
-        st.error("Application arrêtée: Les modules requis sont manquants.")
-        return
+    # 1. Obtient le service authentifié (mise en cache)
+    drive_service = get_drive_service()
 
-    # 1. Tenter l'initialisation de Drive
-    drive, folder_id = init_google_drive()
-    
-    if not drive:
-        st.markdown("---")
-        st.warning("Arrêt du test : L'initialisation a échoué. Veuillez corriger le secret.")
-        return
-
-    st.markdown("---")
-    
-    # 2. Bouton pour déclencher la liste
-    # La liste est affichée uniquement après que l'utilisateur clique sur le bouton
-    st.markdown("<div class='phase-block'>", unsafe_allow_html=True)
-    st.markdown("<h2>Action</h2>", unsafe_allow_html=True)
-    
-    if st.button("🔄 Actualiser et Afficher la Liste des Fichiers dans Drive", type="primary"):
-        list_files_in_drive_folder(drive, folder_id)
+    if drive_service:
+        # 2. Section Upload
+        uploaded_file = st.file_uploader(
+            "Choisissez un fichier à uploader (max 200MB)",
+            type=None # Autorise tous les types de fichiers
+        )
         
-    st.markdown("</div>", unsafe_allow_html=True)
+        if uploaded_file is not None:
+            # Bouton d'upload explicite
+            if st.button("Lancer l'Upload vers Drive"):
+                uploader_fichier(drive_service, uploaded_file, DRIVE_FOLDER_ID)
+                
+                # Re-lister après l'upload
+                st.divider()
+                lister_fichiers_dossier(drive_service, DRIVE_FOLDER_ID)
+                
+        # 3. Section Liste (si pas d'upload en cours)
+        if uploaded_file is None:
+            st.divider()
+            if st.button("Lister les fichiers du dossier Drive"):
+                lister_fichiers_dossier(drive_service, DRIVE_FOLDER_ID)
+                
+    else:
+        st.warning("Veuillez configurer correctement l'authentification Google Drive.")
 
 if __name__ == '__main__':
     main()
