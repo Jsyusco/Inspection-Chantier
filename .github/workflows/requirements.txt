@@ -1,8 +1,5 @@
 streamlit
 pandas
-pydrive2
-google-api-python-client
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-requests
+numpy
+python-docx
+st-gsheets-connection
