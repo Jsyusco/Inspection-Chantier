@@ -10,7 +10,7 @@ import utils
 # --- CONFIGURATION ET STYLE ---
 st.set_page_config(page_title="Yusco - Formulaire Chantier", layout="centered", page_icon="📋")
 
-# CSS inspiré du design Yusco avec gradients et animations
+# CSS inspiré du design Yusco avec gradients et animations - Compatible Dark/Light Mode
 st.markdown("""
 <style>
     /* Variables de couleurs Yusco */
@@ -21,21 +21,48 @@ st.markdown("""
         --y-green-dark: #2d5a52;
     }
     
-    /* Fond général */
+    /* Fond général - S'adapte au thème */
     .stApp { 
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        color: #e0e0e0; 
+        background: var(--background-color);
     }
     
-    /* En-tête principal avec gradient */
+    /* Variables pour Dark Mode */
+    [data-theme="dark"] {
+        --background-color: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        --card-bg: rgba(255, 255, 255, 0.05);
+        --card-bg-hover: rgba(255, 255, 255, 0.08);
+        --card-border: rgba(255, 255, 255, 0.1);
+        --text-primary: #ffffff;
+        --text-secondary: #e0e0e0;
+        --text-tertiary: #94a3b8;
+        --header-bg: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        --input-bg: rgba(255, 255, 255, 0.05);
+        --input-border: rgba(255, 255, 255, 0.1);
+    }
+    
+    /* Variables pour Light Mode */
+    [data-theme="light"] {
+        --background-color: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        --card-bg: rgba(255, 255, 255, 0.9);
+        --card-bg-hover: rgba(255, 255, 255, 1);
+        --card-border: rgba(0, 0, 0, 0.1);
+        --text-primary: #1e293b;
+        --text-secondary: #334155;
+        --text-tertiary: #64748b;
+        --header-bg: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+        --input-bg: rgba(255, 255, 255, 0.9);
+        --input-border: rgba(0, 0, 0, 0.15);
+    }
+    
+    /* En-tête principal avec gradient - S'adapte au thème */
     .main-header { 
-        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        background: var(--header-bg);
         padding: 1.5rem;
         border-radius: 12px;
         margin-bottom: 1.5rem;
         text-align: center;
         border-bottom: 4px solid var(--y-orange);
-        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.15);
     }
     
     .main-header h1 {
@@ -43,12 +70,12 @@ st.markdown("""
         font-weight: 900;
         letter-spacing: -0.5px;
         margin: 0;
-        color: #ffffff !important;
+        color: var(--text-primary) !important;
     }
     
     .main-header p {
         font-size: 0.7rem;
-        color: #94a3b8;
+        color: var(--text-tertiary);
         text-transform: uppercase;
         letter-spacing: 2px;
         font-weight: 700;
@@ -61,26 +88,27 @@ st.markdown("""
         padding: 1rem;
     }
     
-    /* Cartes de phase avec effet glassmorphism */
+    /* Cartes de phase avec effet glassmorphism - S'adapte au thème */
     .phase-block { 
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--card-bg);
         backdrop-filter: blur(10px);
         padding: 1.5rem;
         border-radius: 16px;
         margin-bottom: 1.5rem;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        border: 1px solid var(--card-border);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
         transition: all 0.3s ease;
     }
     
     .phase-block:hover {
         transform: translateY(-2px);
-        box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+        background: var(--card-bg-hover);
     }
     
-    /* Cartes de questions avec animation */
+    /* Cartes de questions avec animation - S'adapte au thème */
     .question-card { 
-        background: rgba(255, 255, 255, 0.03);
+        background: var(--card-bg);
         padding: 1.25rem;
         border-radius: 12px;
         margin-bottom: 1rem;
@@ -90,7 +118,7 @@ st.markdown("""
     }
     
     .question-card:hover {
-        background: rgba(255, 255, 255, 0.06);
+        background: var(--card-bg-hover);
         border-left-color: var(--y-orange);
     }
     
@@ -99,9 +127,9 @@ st.markdown("""
         to { opacity: 1; transform: translateY(0); }
     }
     
-    /* Typographie */
+    /* Typographie - S'adapte au thème */
     h1, h2, h3 { 
-        color: #ffffff !important;
+        color: var(--text-primary) !important;
         font-weight: 900 !important;
         letter-spacing: -0.5px;
     }
@@ -123,8 +151,8 @@ st.markdown("""
         margin-left: 0.5rem;
     }
     
-    /* Boîtes de messages */
-    .success-box { 
+    /* Boîtes de messages - Mode sombre */
+    [data-theme="dark"] .success-box { 
         background: linear-gradient(135deg, rgba(52, 211, 153, 0.15) 0%, rgba(16, 185, 129, 0.15) 100%);
         padding: 1rem;
         border-radius: 12px;
@@ -134,7 +162,7 @@ st.markdown("""
         backdrop-filter: blur(10px);
     }
     
-    .error-box { 
+    [data-theme="dark"] .error-box { 
         background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.15) 100%);
         padding: 1rem;
         border-radius: 12px;
@@ -142,6 +170,25 @@ st.markdown("""
         color: #fca5a5;
         margin: 1rem 0;
         backdrop-filter: blur(10px);
+    }
+    
+    /* Boîtes de messages - Mode clair */
+    [data-theme="light"] .success-box { 
+        background: linear-gradient(135deg, rgba(52, 211, 153, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
+        padding: 1rem;
+        border-radius: 12px;
+        border-left: 5px solid #10b981;
+        color: #047857;
+        margin: 1rem 0;
+    }
+    
+    [data-theme="light"] .error-box { 
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.2) 100%);
+        padding: 1rem;
+        border-radius: 12px;
+        border-left: 5px solid #ef4444;
+        color: #b91c1c;
+        margin: 1rem 0;
     }
     
     /* Boutons avec gradients */
@@ -167,14 +214,14 @@ st.markdown("""
         color: white;
     }
     
-    /* Inputs et select */
+    /* Inputs et select - S'adapte au thème */
     .stTextInput > div > div > input,
     .stSelectbox > div > div > select,
     .stTextArea > div > div > textarea {
-        background: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        background: var(--input-bg) !important;
+        border: 1px solid var(--input-border) !important;
         border-radius: 8px !important;
-        color: #e0e0e0 !important;
+        color: var(--text-secondary) !important;
         transition: all 0.3s ease;
     }
     
@@ -185,25 +232,27 @@ st.markdown("""
         box-shadow: 0 0 0 2px rgba(59, 116, 106, 0.2) !important;
     }
     
-    /* Expander */
+    /* Expander - S'adapte au thème */
     .streamlit-expanderHeader {
-        background: rgba(255, 255, 255, 0.05) !important;
+        background: var(--card-bg) !important;
         border-radius: 10px !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border: 1px solid var(--card-border) !important;
         font-weight: 700 !important;
+        color: var(--text-primary) !important;
     }
     
-    /* Divider */
+    /* Divider - S'adapte au thème */
     hr {
-        border-color: rgba(255, 255, 255, 0.1) !important;
+        border-color: var(--card-border) !important;
         margin: 1.5rem 0 !important;
     }
     
-    /* Info, warning, success boxes natives de Streamlit */
+    /* Info, warning, success boxes natives de Streamlit - S'adapte au thème */
     .stAlert {
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--card-bg);
         backdrop-filter: blur(10px);
         border-radius: 10px;
+        border: 1px solid var(--card-border);
     }
     
     /* Spinner */
@@ -211,8 +260,8 @@ st.markdown("""
         border-color: var(--y-orange) transparent transparent transparent !important;
     }
     
-    /* Badge en ligne */
-    .status-badge {
+    /* Badge en ligne - Mode sombre */
+    [data-theme="dark"] .status-badge {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
@@ -225,6 +274,22 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 2px;
         color: #6ee7b7;
+    }
+    
+    /* Badge en ligne - Mode clair */
+    [data-theme="light"] .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: rgba(16, 185, 129, 0.2);
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        border: 1px solid rgba(16, 185, 129, 0.4);
+        font-size: 0.7rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: #047857;
     }
     
     .pulse-dot {
@@ -246,13 +311,41 @@ st.markdown("""
         color: white !important;
     }
     
-    /* Conteneur avec bordure */
+    /* Conteneur avec bordure - S'adapte au thème */
     [data-testid="stVerticalBlock"] > [style*="border"] {
-        border-color: rgba(255, 255, 255, 0.1) !important;
+        border-color: var(--card-border) !important;
         border-radius: 10px !important;
-        background: rgba(255, 255, 255, 0.03) !important;
+        background: var(--card-bg) !important;
     }
+    
+    /* Script JS pour détecter et appliquer le thème Streamlit */
 </style>
+
+<script>
+    // Détection automatique du thème Streamlit
+    function updateTheme() {
+        const streamlitDoc = window.parent.document;
+        const isDark = streamlitDoc.querySelector('[data-testid="stAppViewContainer"]')
+            ?.getAttribute('data-theme') === 'dark' 
+            || streamlitDoc.documentElement.classList.contains('dark')
+            || window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    }
+    
+    // Mise à jour initiale
+    updateTheme();
+    
+    // Observer les changements de thème
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(window.parent.document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'data-theme']
+    });
+    
+    // Écouter les changements système
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateTheme);
+</script>
 """, unsafe_allow_html=True)
 
 # --- GESTION DE L'ÉTAT ---
